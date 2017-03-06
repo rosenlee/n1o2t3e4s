@@ -1,0 +1,127 @@
+
+
+
+开源项目
+http://demo.pythoner.com/itt2zh/index.html
+
+http://www.nowamagic.net/academy/part/13/325/#
+
+
+从上面的图可以看出，Tornado 不仅仅是一个WEB框架，它还完整地实现了HTTP服务器和客户端，在此基础上提供WEB服务。它可以分为四层：
+最底层的EVENT层处理IO事件；
+TCP层实现了TCP服务器，负责数据传输；
+HTTP/HTTPS层基于HTTP协议实现了HTTP服务器和客户端；
+最上层为WEB框架，包含了处理器、模板、数据库连接、认证、本地化等等WEB框架需要具备的功能。
+
+
+
+
+
+
+
+
+
+如何理解 Tornado ？
+
+https://www.zhihu.com/question/20136991
+
+作者：刘超
+链接：https://www.zhihu.com/question/20136991/answer/49672826
+来源：知乎
+著作权归作者所有，转载请联系作者获得授权。
+
+
+> 就是说它作为 web 框架比 Django 简单，又支援异步 IO，且更不需要前端的 webserver ? 
+> 我已经混乱了， Tornado是 Nginx、Django、Node.js 的结合体？又或是 Nginx * 20% + Django * 40% + Node.js * 40% ？
+
+
+你需要搞清楚几个概念： 
+1，web server是监听端口，负责HTTP链接管理、数据收发、HTTP协议实现等底层上的处理。 
+2，Web框架定义的是单个HTTP请求处理的流程。
+3，nginx是反向代理服务器，是一个特殊的web server应用，和web server并不是同级的概念。
+
+Tornado既是web server又是web框架，这两者并不矛盾。
+
+举例来说，你写了一个tornado应用之后，直接把tornado端口跑在8000，这个时候，通过localhost:8000/foo就能访问到你的网页。这里分两步，tornado完成了底部IO事件的监听和数据接受等工作，这是tornado完成了其作为web server的使命。然后你通过按照tornado框架定义的流程，在对应的地方写了个get函数，实现了这个页面的具体内容，这是tornado作为web 框架体现了作用。
+
+那么nginx有什么用？
+
+他是个反向代理，反向代理顾名思义，其作用就是将接收到的HTTP请求按照一定的规则转发给后端其他服务器处理。
+
+比如在你的一台机器上跑了三个tornado应用：foo1，foo2，foo3，端口分别为8000，8001，8003，你希望用户可以直接通过80端口来访问这些应用。这个时候你就可以用nginx来达到这个目的了。让nginx跑在80端口，当他接收到请求时，如果是/foo1，就转发给8000端口处理；如果是/foo2，就转发给8001端口处理，foo3类似。
+
+
+所以，tornado和nginx并没有什么联系。实际上，很多框架都实现了一些简易web server，用于调试。tornado的web server是异步的，以可以处理大量的非活跃长连接著称。所以其web server是他的一个特性feature，在介绍的时候就会提及自己是一个很酷的webserver了。
+
+回到主题，题主你在你机器上装装nginx、用tornado写个hello world就都清楚了。
+
+
+http://www.tuicool.com/articles/qeY3ymJ
+
+tornado并行执行多个异步的原理
+
+http://www.pulpcode.cn/2016/03/06/tornado-yield-futures-run-in-parallel/?utm_source=tuicool&utm_medium=referral
+
+浅析tornado协程运行原理
+
+http://python.jobbole.com/85744/
+
+http://xidui.github.io/2015/10/29/%E6%B7%B1%E5%85%A5%E7%90%86%E8%A7%A3python3-4-Asyncio%E5%BA%93%E4%B8%8ENode-js%E7%9A%84%E5%BC%82%E6%AD%A5IO%E6%9C%BA%E5%88%B6/
+
+《计算机程序的构造与解释》
+
+https://www.zouyesheng.com/context-in-async-env.html
+
+异步调用中的上下文控制Tornado stack context
+
+
+基于 Python 生成器的 Tornado 协程异步
+
+
+
+Coroutine
+
+起初我以为调用协程后，返回的是一个生成器对象，毕竟gen.coroutine装饰在一个函数或者生成器上。看了源码发现，其实每次调用一个协程，它在获取了生成器对象之后，同时又对它执行了next操作来获取生成器内部yield出来的值，这个可以是一个值，当然也可以是一个由内部协程嵌套调用返回的future对象。
+Future
+
+我觉得Future在tornado中是一个很奇妙的对象，它是一个穿梭于协程和调度器之间的信使。提供了回调函数注册(当异步事件完成后，调用注册的回调)、中间结果保存、嵌套协程唤醒父协程(通过Runner实现)等功能。Coroutine和Future是一一对应的，可以从上节gen.coroutine装饰器的实现中看到。每调用一个协程，表达式所返回的就是一个Future对象，它所表达的意义为：这个协程的内部各种异步逻辑执行完毕后，会把结果保存在这个Future中，同时调用这个Future中指定的回调函数，而future中的回调函数是什么时候被注册的呢？那就是当前——你通过调用协程，返回了这个future对象的时候：
+我们看看demo代码中run_sync的实现:
+代码中先给IOLoop注册一个回调函数，等下个事件循环再执行内部定义的run函数。在run中通过result = func()执行协程outer_coroutine，result则是该协程对应的future对象。如果这个时候不对future作任何操作，最后这个future完成后也不会执行任何回调。所以在源码中通过add_future给这个future添加回调函数，也就是self.stop()，表明这个协程执行完毕后触发的操作是退出事件循环。
+其实IOLoop::add_future这个函数的命名会有些奇怪，刚读代码还不知道它是干嘛的(给IOLoop添加future是什么鬼？如果说是add_callback那还容易理解)，看了add_future的实现就明白了:
+它并不会给IOLoop添加future(也没有什么意义)，它只是给这个future添加回调函数而已，而这个回调函数是当这个future完成以后给IOLoop添加一个回调函数(有点绕，哈哈~给IOLoop添加的回调函数在这里就是stop)。因此当一个future完成以后，到最后future的回调函数真正被执行将会隔着一个IOLoop的事件循环，而不是马上会被执行。
+Runner
+
+如果说tornado是一辆车，那么Runner对象就是它的发动机，由它来调度各种协程来完成异步事件的操作。Coroutine和Runner也是一一对应的，每个Coroutine都是由一个Runner实例去执行的。协程包装着生成器(当然也有可能是函数，本文考虑比较复杂的协程嵌套调用的情况)，在生成器内部，也有可能会调用其它的协程，从而把内部协程的future对象yield出来，这个runner就会通过调用返回的方式(future = next(gen))接到内部出来的future，并把它纳入执行的loop中，先是handle_yielded，再是run(中间会隔着一个或者多个IOLoop的事件循环，因此图中是用虚线表示的)。
+调度器中有两个比较重要的函数: handle_yielded和run，先来看handle_yielded:
+在runner中，handle_yielded用于处理generator返回的内部协程future对象。因为协程处理的大部分是异步的事件，所以内部协程yield出来的future对象状态多半还是处于未完成。这个时候收到该future的Runner所能做的也仅仅只是注册一个回调函数而已(上面源码的最后几行)。
+
+再来看看run:
+
+run函数中的注释很好得诠释了它的作用，它就是不断地给传入Runner的generator执行next或者send操作(next或send都会让生成器继续运行，区别就是send会传一个参数进去)，直到generator返回的future对象状态还未完成，需要等待异步响应，这个时候它会调用handle_yielded。
+异步响应来了以后，就会调用这个run，为什么呢？因为在handle_yielded中给这个future注册了回调函数，回调函数就是run函数。然后在run函数中执行send(value)，让这个生成器继续运行，如此往复循环，直到generator退出。
+generator退出就代表着这个Runner引擎所跑的Coroutine完成了，然后再给这个Coroutine所对应的Future对象执行set_result操作，表示这个协程的Future已完成了，可以执行它的回调函数了。
+这个回调函数对于outer_coroutine的future来说就是执行IOLoop的stop操作。对于inner_coroutine的future来说就是outer_coroutine对应的Runner的run操作。 这句话很绕，但是要是真读懂了，相信对于它的运行原理也就了解的差不多了。
+IOLoop
+
+IOLoop是一个很常见的模块，就是多路复用IO机制，好多项目中都有这一块的封装，原理都差不多。也可以参考shadowsocks中的loop模块，它也是用python实现的基于多种不同操作系统io多路复用的封装。tornado的ioloop也是类似的，记录了一个个文件描述符和handler的pair，每当有io事件发生，就会调用该文件描述符对应的handler。如果这个handler是对future执行set_result操作，那连锁地就会执行Runner中的run，从而进入Runner的运行循环中，直到需要等待下一个异步事件，然后再向ioloop注册事件。。。如此循环往复。
+
+http://blog.csdn.net/wyx819/article/details/45420017
+tornado中的协程是如何工作的
+
+定义
+协程代码块
+一个入口点和下一个入口点(或者退出点)中的代码。
+协程模块
+由n个入口点代码，和n个协程代码块组成。第一个入口点通常是一个函 数入口点。其组织形式如：函数入口点->协程代码块->入口点->协程代码块…，入口点和代码块相间。
+线性模块
+一个同步函数的函数体是线性执行的。也就是说一个模块中的每一行代码，相继执行，一个模块在执行中，如果还没有执行完毕，不会去执行其他模块的代码。称这样的代码模块为线性模块。
+一个协程模块,如果只含有单一入口点和单一协程代码块(假设这个协程代码块全是同步代码),当然这个协程模块是一个线性执行模块，但是如果含有多个入口点和多个协程代码块，那么就不是一个线性模块。那么执行一个协程模块过程实际是分散的(不同的时间段，执行不同的协程代码块，协程代码块的执行时间段，彼此不相交)，但也是顺序的(后一个协程代码块在前一个协程代码块执行结束后才执行)。两个属于同一协程模块的相继协程代码块执行的中间时间间隙，可能有很多其他协程模块的协程代码片段在执行。
+
+
+
+https://mirrors.segmentfault.com/itt2zh/ch2.html
+http://tornado-zh.readthedocs.io/zh/latest/guide/templates.html
+
+模板和UI
+
+
